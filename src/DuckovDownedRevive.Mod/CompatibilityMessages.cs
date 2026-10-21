@@ -1,4 +1,4 @@
-namespace DuckovDownedRevive.Mod
+namespace DuckovDownedRevive
 {
     internal static class CompatibilityMessages
     {

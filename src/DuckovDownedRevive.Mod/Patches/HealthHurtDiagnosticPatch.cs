@@ -1,15 +1,14 @@
 using HarmonyLib;
 using UnityEngine;
 
-namespace DuckovDownedRevive.Mod.Patches
+namespace DuckovDownedRevive.Patches
 {
     [HarmonyPatch(typeof(Health), "Hurt")]
     internal static class HealthHurtDiagnosticPatch
     {
         private static void Prefix(Health __instance, DamageInfo damageInfo)
         {
-            DownedReviveModBehaviour behaviour =
-                DownedReviveModBehaviour.Instance;
+            ModBehaviour behaviour = ModBehaviour.Instance;
             if (behaviour == null || __instance == null)
             {
                 return;

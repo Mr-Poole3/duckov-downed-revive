@@ -8,9 +8,9 @@ using LiteNetLib;
 using LiteNetLib.Utils;
 using UnityEngine;
 
-namespace DuckovDownedRevive.Mod
+namespace DuckovDownedRevive
 {
-    public sealed class DownedReviveModBehaviour :
+    public sealed class ModBehaviour :
         Duckov.Modding.ModBehaviour
     {
         private const float RetryIntervalSeconds = 1.0f;
@@ -26,7 +26,7 @@ namespace DuckovDownedRevive.Mod
         private readonly DownedReviveSession _session =
             new DownedReviveSession();
         private readonly PlayerRoster _roster = new PlayerRoster();
-        private static DownedReviveModBehaviour _instance;
+        private static ModBehaviour _instance;
 
         private IDisposable _handlerRegistration;
         private Harmony _harmony;
@@ -47,7 +47,7 @@ namespace DuckovDownedRevive.Mod
         private CompatibilityStatus _lastLoggedStatus;
         private string _diagnosticText = "Downed Revive not initialized.";
 
-        public static DownedReviveModBehaviour Instance
+        public static ModBehaviour Instance
         {
             get { return _instance; }
         }
@@ -89,7 +89,7 @@ namespace DuckovDownedRevive.Mod
             }
 
             _harmony = new Harmony("duckov.downed-revive");
-            _harmony.PatchAll(typeof(DownedReviveModBehaviour).Assembly);
+            _harmony.PatchAll(typeof(ModBehaviour).Assembly);
             RefreshDiagnostics();
             Debug.Log("[DuckovDownedRevive] Compatibility tracer loaded. " +
                 _diagnosticText.Replace("\n", " | "));

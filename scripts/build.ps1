@@ -94,6 +94,18 @@ if (-not $SkipMod) {
         -Destination (Join-Path $packageOutput 'DuckovDownedRevive.Core.dll') -Force
     Copy-Item -LiteralPath (Join-Path $root 'mod\info.ini') `
         -Destination (Join-Path $packageOutput 'info.ini') -Force
+
+    $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($pwsh) {
+        & $pwsh.Source -NoProfile -ExecutionPolicy Bypass `
+            -File (Join-Path $root 'scripts\validate-package.ps1') `
+            -PackageDirectory $packageOutput
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Package validation failed.'
+        }
+    } else {
+        Write-Warning 'pwsh is unavailable; package type validation was skipped.'
+    }
 }
 
 Write-Host "Build complete: $artifacts"
