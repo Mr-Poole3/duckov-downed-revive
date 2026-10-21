@@ -2,8 +2,8 @@ namespace DuckovDownedRevive.Core
 {
     public static class DownedReviveProtocol
     {
-        public const int CurrentVersion = 1;
-        public const string ChannelName = "duckov.downed-revive.v1";
+        public const int CurrentVersion = 2;
+        public const string ChannelName = "duckov.downed-revive.v2";
         public const double DefaultHandshakeTimeoutSeconds = 10.0;
     }
 

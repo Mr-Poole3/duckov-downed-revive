@@ -6,15 +6,16 @@ downed state and teammate rescue.
 The feature is under active development. The current alpha implements the build,
 Mod bootstrap, versioned compatibility handshake, connected-peer tracking,
 global fallback state, host-locked raid configuration, a per-player down
-opportunity ledger, an `F8` compatibility overlay, an `F9` host rules panel, and
-a read-only lethal-damage probe. Downed and revive gameplay is specified and its
-host state machine is under development, but it is not yet enabled in game.
+opportunity ledger, an `F8` compatibility overlay, an `F9` host rules panel, a
+guarded host down transition, a host-authoritative countdown, remote down-state
+sync, and teammate down markers. Teammate rescue and revival are still under
+development.
 
 ## Compatibility
 
 - Game runtime: Unity 2022.3.62f2 Mono
 - Co-op Mod baseline: EscapeFromDuckovCoopMod 1.3.6
-- Mod protocol: 1
+- Mod protocol: 2
 
 The feature disables itself when connected participants are missing the Mod or
 use an incompatible protocol.
@@ -52,8 +53,9 @@ two-or-more-player session reports one entry per connected peer and protocol
 version 1.
 
 The current diagnostic build logs potentially lethal main-character damage with
-the `[DuckovDownedRevive][Probe]` prefix. The probe only observes; it does not
-change death behavior.
+the `[DuckovDownedRevive][Probe]` prefix. The probe writes to
+`DuckovDownedReviveProbe.log` under Unity's persistent data directory and also
+shows the latest events in the `F8` overlay.
 
 ## Design And Specifications
 

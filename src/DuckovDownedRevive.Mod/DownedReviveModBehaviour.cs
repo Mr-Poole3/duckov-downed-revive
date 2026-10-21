@@ -15,10 +15,22 @@ namespace DuckovDownedRevive
         Duckov.Modding.ModBehaviour
     {
         private const float RetryIntervalSeconds = 1.0f;
+        private const float DownSnapshotIntervalSeconds = 0.5f;
         private const string PrefMaxDowns = "DuckovDownedRevive.MaxDowns";
         private const string PrefDownDuration = "DuckovDownedRevive.DownDuration";
         private const string PrefInvulnerable = "DuckovDownedRevive.Invulnerable";
         private const string PrefReviveHealth = "DuckovDownedRevive.ReviveHealth";
+
+        private sealed class RemoteDownView
+        {
+            public string DownId;
+            public string PlayerId;
+            public CharacterMainControl Character;
+            public float RemainingSeconds;
+            public float DurationSeconds;
+            public bool Invulnerable;
+            public float LastUpdatedAt;
+        }
 
         private readonly CompatibilityTracker _tracker =
             new CompatibilityTracker();
@@ -29,6 +41,8 @@ namespace DuckovDownedRevive
         private readonly PlayerRoster _roster = new PlayerRoster();
         private readonly Dictionary<string, CharacterMainControl> _characters =
             new Dictionary<string, CharacterMainControl>(StringComparer.Ordinal);
+        private readonly Dictionary<string, RemoteDownView> _remoteDowns =
+            new Dictionary<string, RemoteDownView>(StringComparer.Ordinal);
         private static ModBehaviour _instance;
 
         private IDisposable _handlerRegistration;
@@ -44,6 +58,7 @@ namespace DuckovDownedRevive
         private bool _configPanelVisible;
         private bool _fallbackBroadcast;
         private float _nextRetryAt;
+        private float _nextDownSnapshotAt;
         private uint _currentRaidId;
         private uint _observedRaidId;
         private DownedReviveConfig _replicatedConfig;
@@ -167,6 +182,13 @@ namespace DuckovDownedRevive
             float now = Time.realtimeSinceStartup;
             _session.Tick(now);
             ProcessDownTransitions();
+            if (_isHost &&
+                _localDownedCharacter != null &&
+                now >= _nextDownSnapshotAt)
+            {
+                _nextDownSnapshotAt = now + DownSnapshotIntervalSeconds;
+                BroadcastDownSnapshot();
+            }
 
             if (now >= _nextRetryAt)
             {
@@ -203,6 +225,7 @@ namespace DuckovDownedRevive
             }
 
             DrawLocalDownedHud();
+            DrawRemoteDownMarkers();
         }
 
         private void OnPeerConnected(NetPeer peer)
@@ -234,6 +257,12 @@ namespace DuckovDownedRevive
                 : (isLocal ? "local-player" : "unknown-player");
             _roster.AddOrUpdate(identity, isLocal);
             _characters[identity] = character;
+            RemoteDownView remoteDown;
+            if (_remoteDowns.TryGetValue(identity, out remoteDown))
+            {
+                remoteDown.Character = character;
+                ApplyRemoteDownedVisuals(remoteDown);
+            }
             if (_isHost)
             {
                 _session.AddPlayer(identity);
@@ -320,6 +349,32 @@ namespace DuckovDownedRevive
                         config.DownedInvulnerable = reader.ReadBoolean();
                         config.ReviveHealthPercent = reader.ReadSingle();
                         _replicatedConfig = config.Normalize();
+                    }
+                }
+                else if (messageType == CompatibilityMessages.DownSnapshot)
+                {
+                    if (!_isHost)
+                    {
+                        string downId = reader.ReadString();
+                        string playerId = reader.ReadString();
+                        float remaining = reader.ReadSingle();
+                        float duration = reader.ReadSingle();
+                        bool invulnerable = reader.ReadBoolean();
+                        ApplyRemoteDown(
+                            downId,
+                            playerId,
+                            remaining,
+                            duration,
+                            invulnerable);
+                    }
+                }
+                else if (messageType == CompatibilityMessages.DownEnd)
+                {
+                    if (!_isHost)
+                    {
+                        string downId = reader.ReadString();
+                        string playerId = reader.ReadString();
+                        RemoveRemoteDown(downId, playerId);
                     }
                 }
             }
@@ -442,6 +497,9 @@ namespace DuckovDownedRevive
                 " downId=" + snapshot.DownId +
                 " remaining=" +
                 snapshot.RemainingSeconds.ToString("0.00"));
+            _nextDownSnapshotAt =
+                Time.realtimeSinceStartup + DownSnapshotIntervalSeconds;
+            BroadcastDownSnapshot();
             return true;
         }
 
@@ -491,6 +549,7 @@ namespace DuckovDownedRevive
                 " player=" + playerId +
                 " reason=" + reason);
 
+            BroadcastDownEnd(playerId);
             ClearLocalDownedState();
             TerminalDamageBypass.Active = true;
             try
@@ -581,6 +640,62 @@ namespace DuckovDownedRevive
             GUI.Label(
                 new Rect(background.x, background.y + 4.0f, background.width, 24.0f),
                 "DOWNED  " + Mathf.CeilToInt(snapshot.RemainingSeconds) + "s");
+        }
+
+        private void DrawRemoteDownMarkers()
+        {
+            CharacterMainControl localCharacter = CharacterMainControl.Main;
+            Camera camera = Camera.main;
+            if (localCharacter == null || camera == null)
+            {
+                return;
+            }
+
+            float now = Time.realtimeSinceStartup;
+            foreach (KeyValuePair<string, RemoteDownView> pair in _remoteDowns)
+            {
+                RemoteDownView view = pair.Value;
+                if (view == null ||
+                    view.Character == null ||
+                    string.Equals(
+                        view.PlayerId,
+                        LocalPlayerId(),
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                float distance = Vector3.Distance(
+                    localCharacter.transform.position,
+                    view.Character.transform.position);
+                if (distance > 30.0f)
+                {
+                    continue;
+                }
+
+                float remaining = Mathf.Max(
+                    0.0f,
+                    view.RemainingSeconds - (now - view.LastUpdatedAt));
+                Vector3 screenPoint = camera.WorldToScreenPoint(
+                    view.Character.transform.position + Vector3.up * 1.8f);
+                if (screenPoint.z < 0.0f)
+                {
+                    continue;
+                }
+
+                Rect marker = new Rect(
+                    screenPoint.x - 78.0f,
+                    Screen.height - screenPoint.y - 42.0f,
+                    156.0f,
+                    44.0f);
+                GUI.Box(marker, string.Empty);
+                GUI.Label(
+                    new Rect(marker.x + 8.0f, marker.y + 4.0f, 140.0f, 20.0f),
+                    "Downed teammate");
+                GUI.Label(
+                    new Rect(marker.x + 8.0f, marker.y + 22.0f, 140.0f, 18.0f),
+                    Mathf.CeilToInt(remaining) + "s");
+            }
         }
 
         private string LocalPlayerId()
@@ -691,11 +806,181 @@ namespace DuckovDownedRevive
             }
         }
 
+        private void BroadcastDownSnapshot()
+        {
+            if (!_isHost || string.IsNullOrEmpty(_localDownedPlayerId))
+            {
+                return;
+            }
+
+            DownRecordSnapshot snapshot =
+                _session.GetDown(_localDownedPlayerId);
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            try
+            {
+                ModNetworkApi.Broadcast(
+                    DownedReviveProtocol.ChannelName,
+                    delegate(NetDataWriter writer)
+                    {
+                        writer.Put(CompatibilityMessages.DownSnapshot);
+                        writer.Put(snapshot.DownId);
+                        writer.Put(snapshot.PlayerId);
+                        writer.Put(snapshot.RemainingSeconds);
+                        writer.Put(_session.Config.DownDurationSeconds);
+                        writer.Put(_session.Config.DownedInvulnerable);
+                    },
+                    true);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "[DuckovDownedRevive] Down snapshot failed: " +
+                    exception.Message);
+            }
+        }
+
+        private void BroadcastDownEnd(string playerId)
+        {
+            if (!_isHost || string.IsNullOrEmpty(playerId))
+            {
+                return;
+            }
+
+            DownRecordSnapshot snapshot = _session.GetDown(playerId);
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            try
+            {
+                ModNetworkApi.Broadcast(
+                    DownedReviveProtocol.ChannelName,
+                    delegate(NetDataWriter writer)
+                    {
+                        writer.Put(CompatibilityMessages.DownEnd);
+                        writer.Put(snapshot.DownId);
+                        writer.Put(snapshot.PlayerId);
+                    },
+                    true);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "[DuckovDownedRevive] Down end failed: " +
+                    exception.Message);
+            }
+        }
+
+        private void ApplyRemoteDown(
+            string downId,
+            string playerId,
+            float remainingSeconds,
+            float durationSeconds,
+            bool invulnerable)
+        {
+            if (string.IsNullOrEmpty(downId) || string.IsNullOrEmpty(playerId))
+            {
+                return;
+            }
+
+            RemoteDownView view;
+            if (!_remoteDowns.TryGetValue(playerId, out view))
+            {
+                view = new RemoteDownView();
+                _remoteDowns.Add(playerId, view);
+            }
+
+            view.DownId = downId;
+            view.PlayerId = playerId;
+            view.RemainingSeconds = remainingSeconds;
+            view.DurationSeconds = durationSeconds;
+            view.Invulnerable = invulnerable;
+            view.LastUpdatedAt = Time.realtimeSinceStartup;
+
+            CharacterMainControl character;
+            if (_characters.TryGetValue(playerId, out character))
+            {
+                view.Character = character;
+                ApplyRemoteDownedVisuals(view);
+            }
+
+            ProbeDiagnostics.RecordSystem(
+                "[DuckovDownedRevive][Down] REMOTE_SNAPSHOT" +
+                " player=" + playerId +
+                " downId=" + downId +
+                " remaining=" + remainingSeconds.ToString("0.00"));
+        }
+
+        private void ApplyRemoteDownedVisuals(RemoteDownView view)
+        {
+            if (view == null || view.Character == null)
+            {
+                return;
+            }
+
+            CharacterMainControl character = view.Character;
+            character.SetMoveInput(Vector3.zero);
+            character.SetRunInput(false);
+            character.SetAdsInput(false);
+
+            CharacterAnimationControl animation =
+                character.GetComponent<CharacterAnimationControl>();
+            if (animation != null)
+            {
+                animation.enabled = false;
+            }
+
+            Health health = character.Health;
+            if (health != null)
+            {
+                health.SetInvincible(view.Invulnerable);
+            }
+        }
+
+        private void RemoveRemoteDown(string downId, string playerId)
+        {
+            RemoteDownView view;
+            if (!_remoteDowns.TryGetValue(playerId, out view) ||
+                !string.Equals(view.DownId, downId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (view.Character != null)
+            {
+                CharacterAnimationControl animation =
+                    view.Character.GetComponent<CharacterAnimationControl>();
+                if (animation != null)
+                {
+                    animation.enabled = true;
+                }
+
+                Health health = view.Character.Health;
+                if (health != null)
+                {
+                    health.SetInvincible(false);
+                }
+            }
+
+            _remoteDowns.Remove(playerId);
+            ProbeDiagnostics.RecordSystem(
+                "[DuckovDownedRevive][Down] REMOTE_END" +
+                " player=" + playerId +
+                " downId=" + downId);
+        }
+
         private void RefreshDiagnostics()
         {
             CompatibilitySnapshot snapshot =
                 _tracker.Evaluate(Time.realtimeSinceStartup);
             _diagnosticText = CompatibilityDiagnosticsFormatter.Format(snapshot);
+            _diagnosticText += "\nlocalPlayer=" +
+                (LocalPlayerId() ?? "unknown");
 
             if (snapshot.Status != _lastLoggedStatus)
             {

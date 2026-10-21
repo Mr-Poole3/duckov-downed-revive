@@ -117,6 +117,28 @@ Evidence:
 - `ev_7636b2b7adf9efce6a0ca0c4e1dbeb679587ab05b9dfc87eed05344cdf65e733`
 - `ev_1803dc05cc20a6a1df1aeae3ca530982594c34c5883422592197ec4b8d327149`
 
+### Runtime host damage observation
+
+A diagnostic build on the host recorded the following order for player damage:
+
+```text
+DamageReceiver.Hurt PREFIX
+Health.Hurt PREFIX
+Health.Hurt POSTFIX
+DamageReceiver.Hurt POSTFIX
+```
+
+For a lethal hit, `Health.Hurt` entered with `CurrentHealth = 0.68` and
+`damageValue = 11.79`; postfix returned with health `0` and `IsDead = true`.
+`DamageInfo.finalDamage` was still `0` in the prefix.
+
+A non-lethal hit with `CurrentHealth = 10.11` and `damageValue = 11.79` reduced
+health only to `0.68`. This proves that comparing raw `damageValue` against
+current health in a prefix would produce false-positive lethal decisions. The
+implementation therefore guards the health value temporarily, lets the native
+damage pipeline calculate the real applied damage, and restores or enters
+downed state in postfix.
+
 ## Freeze, Camera, and Input
 
 Observed public seams:

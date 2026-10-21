@@ -99,7 +99,10 @@ namespace DuckovDownedRevive.Tests
         {
             CompatibilityTracker tracker = NewActiveTracker();
             tracker.RegisterPeer("client-a", 1);
-            tracker.RegisterCapability("client-a", 2, 2);
+            tracker.RegisterCapability(
+                "client-a",
+                DownedReviveProtocol.CurrentVersion + 1,
+                2);
             CompatibilitySnapshot snapshot = tracker.Evaluate(3);
             Equal(CompatibilityStatus.Fallback, snapshot.Status, "status");
             Equal("protocol-mismatch", snapshot.Reason, "reason");
@@ -164,7 +167,7 @@ namespace DuckovDownedRevive.Tests
             tracker.RegisterCapability("client-a", DownedReviveProtocol.CurrentVersion, 2);
             string text = CompatibilityDiagnosticsFormatter.Format(tracker.Evaluate(3));
             Contains(text, "status=Compatible", "status text");
-            Contains(text, "protocol=1", "protocol text");
+            Contains(text, "protocol=2", "protocol text");
             Contains(text, "raid=42", "raid text");
             Contains(text, "client-a: compatible", "peer text");
         }
