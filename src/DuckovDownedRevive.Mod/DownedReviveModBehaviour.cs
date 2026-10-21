@@ -177,9 +177,13 @@ namespace DuckovDownedRevive
         {
             if (_overlayVisible)
             {
-                GUI.Box(new Rect(16, 16, 520, 168), "Duckov Downed Revive");
-                GUI.Label(new Rect(28, 44, 496, 128), _diagnosticText);
-                GUI.Label(new Rect(16, 188, 520, 20),
+                GUI.Box(new Rect(16, 16, 1100, 360),
+                    "Duckov Downed Revive");
+                GUI.Label(
+                    new Rect(28, 44, 1076, 300),
+                    _diagnosticText + "\n\n" +
+                    ProbeDiagnostics.FormatRecent());
+                GUI.Label(new Rect(16, 380, 1100, 20),
                     "F8 toggles this compatibility report.");
             }
 
@@ -509,7 +513,7 @@ namespace DuckovDownedRevive
 
         private void DrawConfigPanel()
         {
-            float top = _overlayVisible ? 216.0f : 16.0f;
+            float top = _overlayVisible ? 408.0f : 16.0f;
             Rect panel = new Rect(16, top, 560, 222);
             GUI.Box(panel, "Duckov Downed Revive - Host Rules");
 

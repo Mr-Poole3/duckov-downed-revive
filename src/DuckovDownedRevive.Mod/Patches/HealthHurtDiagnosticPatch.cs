@@ -9,24 +9,30 @@ namespace DuckovDownedRevive.Patches
         private static void Prefix(Health __instance, DamageInfo damageInfo)
         {
             CharacterMainControl character = PlayerCharacter(__instance);
+            string target = character == null
+                ? (__instance == null ? "none" : __instance.name)
+                : character.name;
+            string line =
+                "[DuckovDownedRevive][Probe][Health] PRE" +
+                " frame=" + Time.frameCount +
+                " role=" + Role(ModBehaviour.Instance) +
+                " player=" + (character != null) +
+                " target=" + target +
+                " source=" + SourceName(damageInfo) +
+                " damageType=" + damageInfo.damageType +
+                " current=" + (__instance == null
+                    ? "n/a"
+                    : __instance.CurrentHealth.ToString("0.00")) +
+                " damageValue=" + damageInfo.damageValue.ToString("0.00") +
+                " finalDamage=" + damageInfo.finalDamage.ToString("0.00") +
+                " explosion=" + damageInfo.isExplosion +
+                " buffEffect=" + damageInfo.isFromBuffOrEffect;
+            ProbeDiagnostics.RecordHealthPrefix(line);
+
             if (character == null)
             {
                 return;
             }
-
-            ModBehaviour behaviour = ModBehaviour.Instance;
-            Debug.LogWarning(
-                "[DuckovDownedRevive][Probe][Health] PRE" +
-                " frame=" + Time.frameCount +
-                " role=" + Role(behaviour) +
-                " target=" + character.name +
-                " source=" + SourceName(damageInfo) +
-                " damageType=" + damageInfo.damageType +
-                " current=" + __instance.CurrentHealth.ToString("0.00") +
-                " damageValue=" + damageInfo.damageValue.ToString("0.00") +
-                " finalDamage=" + damageInfo.finalDamage.ToString("0.00") +
-                " explosion=" + damageInfo.isExplosion +
-                " buffEffect=" + damageInfo.isFromBuffOrEffect);
         }
 
         private static void Postfix(
@@ -35,19 +41,19 @@ namespace DuckovDownedRevive.Patches
             bool __result)
         {
             CharacterMainControl character = PlayerCharacter(__instance);
-            if (character == null)
-            {
-                return;
-            }
-
-            Debug.LogWarning(
+            ProbeDiagnostics.RecordHealthPostfix(
                 "[DuckovDownedRevive][Probe][Health] POST" +
                 " frame=" + Time.frameCount +
                 " role=" + Role(ModBehaviour.Instance) +
-                " target=" + character.name +
+                " player=" + (character != null) +
+                " target=" + (character == null
+                    ? (__instance == null ? "none" : __instance.name)
+                    : character.name) +
                 " result=" + __result +
-                " current=" + __instance.CurrentHealth.ToString("0.00") +
-                " dead=" + __instance.IsDead +
+                " current=" + (__instance == null
+                    ? "n/a"
+                    : __instance.CurrentHealth.ToString("0.00")) +
+                " dead=" + (__instance != null && __instance.IsDead) +
                 " source=" + SourceName(damageInfo));
         }
 
@@ -87,22 +93,29 @@ namespace DuckovDownedRevive.Patches
             Health health = __instance == null ? null : __instance.health;
             CharacterMainControl character =
                 HealthHurtDiagnosticPatch.PlayerCharacter(health);
-            if (character == null)
-            {
-                return;
-            }
-
-            Debug.LogWarning(
+            string target = character == null
+                ? (health == null ? "none" : health.name)
+                : character.name;
+            string line =
                 "[DuckovDownedRevive][Probe][Receiver] PRE" +
                 " frame=" + Time.frameCount +
                 " role=" + HealthHurtDiagnosticPatch.Role(
                     ModBehaviour.Instance) +
-                " target=" + character.name +
+                " player=" + (character != null) +
+                " target=" + target +
                 " source=" + HealthHurtDiagnosticPatch.SourceName(damageInfo) +
                 " damageType=" + damageInfo.damageType +
-                " current=" + health.CurrentHealth.ToString("0.00") +
+                " current=" + (health == null
+                    ? "n/a"
+                    : health.CurrentHealth.ToString("0.00")) +
                 " damageValue=" + damageInfo.damageValue.ToString("0.00") +
-                " finalDamage=" + damageInfo.finalDamage.ToString("0.00"));
+                " finalDamage=" + damageInfo.finalDamage.ToString("0.00");
+            ProbeDiagnostics.RecordReceiverPrefix(line);
+
+            if (character == null)
+            {
+                return;
+            }
         }
 
         private static void Postfix(
@@ -113,20 +126,20 @@ namespace DuckovDownedRevive.Patches
             Health health = __instance == null ? null : __instance.health;
             CharacterMainControl character =
                 HealthHurtDiagnosticPatch.PlayerCharacter(health);
-            if (character == null)
-            {
-                return;
-            }
-
-            Debug.LogWarning(
+            ProbeDiagnostics.RecordReceiverPostfix(
                 "[DuckovDownedRevive][Probe][Receiver] POST" +
                 " frame=" + Time.frameCount +
                 " role=" + HealthHurtDiagnosticPatch.Role(
                     ModBehaviour.Instance) +
-                " target=" + character.name +
+                " player=" + (character != null) +
+                " target=" + (character == null
+                    ? (health == null ? "none" : health.name)
+                    : character.name) +
                 " result=" + __result +
-                " current=" + health.CurrentHealth.ToString("0.00") +
-                " dead=" + health.IsDead +
+                " current=" + (health == null
+                    ? "n/a"
+                    : health.CurrentHealth.ToString("0.00")) +
+                " dead=" + (health != null && health.IsDead) +
                 " source=" + HealthHurtDiagnosticPatch.SourceName(damageInfo));
         }
     }
