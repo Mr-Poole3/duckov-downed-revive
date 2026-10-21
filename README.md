@@ -6,8 +6,9 @@ downed state and teammate rescue.
 The feature is under active development. The current alpha implements the build,
 Mod bootstrap, versioned compatibility handshake, connected-peer tracking,
 global fallback state, host-locked raid configuration, a per-player down
-opportunity ledger, an `F8` compatibility overlay, and an `F9` host rules panel.
-Downed and revive gameplay is specified but not yet implemented.
+opportunity ledger, an `F8` compatibility overlay, an `F9` host rules panel, and
+a read-only lethal-damage probe. Downed and revive gameplay is specified and its
+host state machine is under development, but it is not yet enabled in game.
 
 ## Compatibility
 
@@ -49,6 +50,10 @@ Do not overwrite the existing co-op Mod.
 Press `F8` in game to show or hide the compatibility report. A compatible
 two-or-more-player session reports one entry per connected peer and protocol
 version 1.
+
+The current diagnostic build logs potentially lethal main-character damage with
+the `[DuckovDownedRevive][Probe]` prefix. The probe only observes; it does not
+change death behavior.
 
 ## Design And Specifications
 

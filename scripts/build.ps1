@@ -53,6 +53,7 @@ if (-not $SkipMod) {
     $managed = Join-Path $gameDir 'Duckov_Data\Managed'
     $coop = Join-Path $gameDir 'Duckov_Data\Mods\3591341282'
     $liteNet = Join-Path $gameDir 'Duckov_Data\Mods\3591339491'
+    $harmony = Join-Path $gameDir 'Duckov_Data\Mods\3589088839'
     $modDll = Join-Path $packageOutput 'DuckovDownedRevive.dll'
     $modSources = @(
         Get-ChildItem -LiteralPath (Join-Path $root 'src\DuckovDownedRevive.Mod') `
@@ -77,6 +78,7 @@ if (-not $SkipMod) {
         "/reference:$(Join-Path $managed 'UnityEngine.InputLegacyModule.dll')"
         "/reference:$(Join-Path $coop 'EscapeFromDuckovModApi.dll')"
         "/reference:$(Join-Path $liteNet 'LiteNetLib.dll')"
+        "/reference:$(Join-Path $harmony '0Harmony.dll')"
     )
     if ($WarningsAsErrors) {
         $modArgs += '/warnaserror+'

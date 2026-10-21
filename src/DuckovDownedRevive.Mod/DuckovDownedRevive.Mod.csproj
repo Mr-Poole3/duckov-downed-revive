@@ -16,6 +16,10 @@
       <HintPath>$(DuckovGameDir)\Duckov_Data\Mods\3591339491\LiteNetLib.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(DuckovGameDir)\Duckov_Data\Mods\3589088839\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="TeamSoda.Duckov.Core">
       <HintPath>$(DuckovGameDir)\Duckov_Data\Managed\TeamSoda.Duckov.Core.dll</HintPath>
       <Private>false</Private>

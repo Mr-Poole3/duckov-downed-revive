@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using DuckovDownedRevive.Core;
 using EscapeFromDuckovCoopMod;
+using HarmonyLib;
 using LiteNetLib;
 using LiteNetLib.Utils;
 using UnityEngine;
@@ -25,29 +26,47 @@ namespace DuckovDownedRevive.Mod
         private readonly DownOpportunityLedger _ledger =
             new DownOpportunityLedger();
         private readonly PlayerRoster _roster = new PlayerRoster();
+        private static DownedReviveModBehaviour _instance;
 
         private IDisposable _handlerRegistration;
+        private Harmony _harmony;
         private Action<CharacterMainControl, string, bool> _playerSpawnedHandler;
         private Action<NetPeer> _peerConnectedHandler;
         private Action<NetPeer> _peerDisconnectedHandler;
+        private Action<RaidUtilities.RaidInfo> _newRaidHandler;
+        private Action<RaidUtilities.RaidInfo> _raidEndHandler;
 
         private bool _isHost;
         private bool _overlayVisible;
         private bool _configPanelVisible;
         private bool _fallbackBroadcast;
         private float _nextRetryAt;
+        private uint _currentRaidId;
         private uint _observedRaidId;
         private DownedReviveConfig _replicatedConfig;
         private CompatibilityStatus _lastLoggedStatus;
         private string _diagnosticText = "Downed Revive not initialized.";
 
+        public static DownedReviveModBehaviour Instance
+        {
+            get { return _instance; }
+        }
+
+        public bool IsHost
+        {
+            get { return _isHost; }
+        }
+
         private void Awake()
         {
+            _instance = this;
             LoadSettings();
 
             _playerSpawnedHandler = OnPlayerSpawned;
             _peerConnectedHandler = OnPeerConnected;
             _peerDisconnectedHandler = OnPeerDisconnected;
+            _newRaidHandler = OnNewRaid;
+            _raidEndHandler = OnRaidEnd;
 
             _handlerRegistration = ModNetworkApi.RegisterHandler(
                 DownedReviveProtocol.ChannelName,
@@ -55,7 +74,17 @@ namespace DuckovDownedRevive.Mod
             ModNetworkApi.PeerConnected += _peerConnectedHandler;
             ModNetworkApi.PeerDisconnected += _peerDisconnectedHandler;
             ModApiEvents.PlayerSpawned += _playerSpawnedHandler;
+            RaidUtilities.OnNewRaid += _newRaidHandler;
+            RaidUtilities.OnRaidEnd += _raidEndHandler;
 
+            RaidUtilities.RaidInfo currentRaid = RaidUtilities.CurrentRaid;
+            if (currentRaid.valid)
+            {
+                _currentRaidId = currentRaid.ID;
+            }
+
+            _harmony = new Harmony("duckov.downed-revive");
+            _harmony.PatchAll(typeof(DownedReviveModBehaviour).Assembly);
             RefreshDiagnostics();
             Debug.Log("[DuckovDownedRevive] Compatibility tracer loaded. " +
                 _diagnosticText.Replace("\n", " | "));
@@ -89,6 +118,26 @@ namespace DuckovDownedRevive.Mod
                 ModNetworkApi.PeerDisconnected -= _peerDisconnectedHandler;
             }
 
+            if (_newRaidHandler != null)
+            {
+                RaidUtilities.OnNewRaid -= _newRaidHandler;
+            }
+
+            if (_raidEndHandler != null)
+            {
+                RaidUtilities.OnRaidEnd -= _raidEndHandler;
+            }
+
+            if (_harmony != null)
+            {
+                _harmony.UnpatchAll(_harmony.Id);
+                _harmony = null;
+            }
+
+            if (ReferenceEquals(_instance, this))
+            {
+                _instance = null;
+            }
         }
 
         private void Update()
@@ -167,6 +216,18 @@ namespace DuckovDownedRevive.Mod
             {
                 _ledger.RegisterPlayer(identity);
             }
+        }
+
+        private void OnNewRaid(RaidUtilities.RaidInfo raid)
+        {
+            _currentRaidId = raid.valid ? raid.ID : 0;
+            _tracker.SetRaid(_currentRaidId);
+        }
+
+        private void OnRaidEnd(RaidUtilities.RaidInfo raid)
+        {
+            _currentRaidId = 0;
+            _tracker.ClearRaid();
         }
 
         private void OnNetworkMessage(ModMessageContext context)
@@ -574,7 +635,9 @@ namespace DuckovDownedRevive.Mod
 
         private void UpdateObservedRaid()
         {
-            uint raidId = ReadActiveRaidId();
+            uint raidId = _currentRaidId != 0
+                ? _currentRaidId
+                : ReadActiveRaidId();
             if (raidId == 0)
             {
                 _tracker.ClearRaid();
@@ -602,55 +665,8 @@ namespace DuckovDownedRevive.Mod
 
         private static uint ReadActiveRaidId()
         {
-            try
-            {
-                Type utilitiesType = typeof(Duckov.Modding.ModBehaviour)
-                    .Assembly
-                    .GetType("RaidUtilities", false);
-                if (utilitiesType == null)
-                {
-                    return 0;
-                }
-
-                PropertyInfo currentRaidProperty = utilitiesType.GetProperty(
-                    "CurrentRaid",
-                    BindingFlags.Public |
-                    BindingFlags.NonPublic |
-                    BindingFlags.Static);
-                if (currentRaidProperty == null)
-                {
-                    return 0;
-                }
-
-                object raid = currentRaidProperty.GetValue(null, null);
-                if (raid == null)
-                {
-                    return 0;
-                }
-
-                Type raidType = raid.GetType();
-                FieldInfo validField = raidType.GetField(
-                    "valid",
-                    BindingFlags.Public |
-                    BindingFlags.NonPublic |
-                    BindingFlags.Instance);
-                FieldInfo idField = raidType.GetField(
-                    "ID",
-                    BindingFlags.Public |
-                    BindingFlags.NonPublic |
-                    BindingFlags.Instance);
-                if (validField == null || idField == null)
-                {
-                    return 0;
-                }
-
-                bool valid = Convert.ToBoolean(validField.GetValue(raid));
-                return valid ? Convert.ToUInt32(idField.GetValue(raid)) : 0;
-            }
-            catch (Exception)
-            {
-                return 0;
-            }
+            RaidUtilities.RaidInfo raid = RaidUtilities.CurrentRaid;
+            return raid.valid ? raid.ID : 0;
         }
     }
 }

@@ -26,6 +26,14 @@ namespace DuckovDownedRevive.Tests
             Run("independent down opportunities", IndependentDownOpportunities);
             Run("raid reset boundaries", RaidResetBoundaries);
             Run("player roster identity", PlayerRosterIdentity);
+            Run("down entry consumes opportunity", DownEntryConsumesOpportunity);
+            Run("down without teammate", DownWithoutTeammate);
+            Run("down countdown timeout", DownCountdownTimeout);
+            Run("rescue pauses and resumes countdown", RescuePausesAndResumesCountdown);
+            Run("rescue completes revival", RescueCompletesRevival);
+            Run("rescue ownership is exclusive", RescueOwnershipIsExclusive);
+            Run("last rescuer downed finalizes target", LastRescuerDownedFinalizesTarget);
+            Run("downed disconnect finalizes", DownedDisconnectFinalizes);
 
             Console.WriteLine("Assertions: " + _assertions);
             if (Failures.Count == 0)
@@ -236,6 +244,129 @@ namespace DuckovDownedRevive.Tests
             True(roster.Contains("client-a"), "contains client");
             roster.Remove("host");
             True(roster.LocalPlayerId == null, "local removed");
+        }
+
+        private static DownedReviveSession NewLiveSession()
+        {
+            DownedReviveConfig config = DownedReviveConfig.CreateDefault();
+            DownedReviveSession session = new DownedReviveSession();
+            session.StartRaid(
+                77,
+                config,
+                new string[] { "host", "client-a", "client-b" },
+                1);
+            return session;
+        }
+
+        private static void DownEntryConsumesOpportunity()
+        {
+            DownedReviveSession session = NewLiveSession();
+            DownRecordSnapshot snapshot;
+            DownEntryResult result = session.TryEnterDown("host", 2, out snapshot);
+            Equal(DownEntryResult.Accepted, result, "entry result");
+            Equal(PlayerLifeState.Downed, session.GetLifeState("host"), "life state");
+            Equal(0, session.RemainingDowns("host"), "opportunity consumed");
+            Equal(DownRecordState.Countdown, snapshot.State, "record state");
+            Equal(30.0f, snapshot.RemainingSeconds, "initial duration");
+        }
+
+        private static void DownWithoutTeammate()
+        {
+            DownedReviveConfig config = DownedReviveConfig.CreateDefault();
+            DownedReviveSession session = new DownedReviveSession();
+            session.StartRaid(78, config, new string[] { "host" }, 1);
+            DownRecordSnapshot snapshot;
+            DownEntryResult result = session.TryEnterDown("host", 2, out snapshot);
+            Equal(DownEntryResult.NoTeammate, result, "entry result");
+            Equal(PlayerLifeState.Alive, session.GetLifeState("host"), "still alive");
+            Equal(1, session.RemainingDowns("host"), "not consumed");
+        }
+
+        private static void DownCountdownTimeout()
+        {
+            DownedReviveSession session = NewLiveSession();
+            DownRecordSnapshot snapshot;
+            session.TryEnterDown("host", 2, out snapshot);
+            session.Tick(32.1);
+            Equal(DownRecordState.Finalized, session.GetDown("host").State, "state");
+            Equal(PlayerLifeState.Dead, session.GetLifeState("host"), "player dead");
+            Equal("timeout", session.GetDown("host").TerminalReason, "reason");
+        }
+
+        private static void RescuePausesAndResumesCountdown()
+        {
+            DownedReviveSession session = NewLiveSession();
+            DownRecordSnapshot snapshot;
+            session.TryEnterDown("host", 2, out snapshot);
+            session.TryStartRescue("host", "client-a", 1.5f, 3);
+            session.CancelRescue("host", "client-a", "movement-input", 5);
+            session.Tick(7);
+
+            DownRecordSnapshot resumed = session.GetDown("host");
+            Equal(27.0f, resumed.RemainingSeconds, "countdown resumes from 27s");
+            Equal(0.0f, resumed.RescueProgressSeconds, "progress reset");
+            True(resumed.RescuerId == null, "owner cleared");
+        }
+
+        private static void RescueCompletesRevival()
+        {
+            DownedReviveSession session = NewLiveSession();
+            DownRecordSnapshot snapshot;
+            session.TryEnterDown("host", 2, out snapshot);
+            Equal(RescueStartResult.Accepted,
+                session.TryStartRescue("host", "client-a", 2.0f, 3),
+                "rescue starts");
+            session.Tick(6.01);
+            Equal(DownRecordState.Revived, session.GetDown("host").State, "state");
+            Equal(PlayerLifeState.Alive, session.GetLifeState("host"), "alive");
+            Equal(3.0f, session.GetDown("host").RescueProgressSeconds, "progress");
+        }
+
+        private static void RescueOwnershipIsExclusive()
+        {
+            DownedReviveSession session = NewLiveSession();
+            DownRecordSnapshot snapshot;
+            session.TryEnterDown("host", 2, out snapshot);
+            Equal(RescueStartResult.Accepted,
+                session.TryStartRescue("host", "client-a", 2.0f, 3),
+                "first rescuer");
+            Equal(RescueStartResult.AlreadyBeingRescued,
+                session.TryStartRescue("host", "client-b", 2.0f, 3.5),
+                "second rescuer rejected");
+        }
+
+        private static void LastRescuerDownedFinalizesTarget()
+        {
+            DownedReviveConfig config = DownedReviveConfig.CreateDefault();
+            DownedReviveSession session = new DownedReviveSession();
+            session.StartRaid(79, config, new string[] { "host", "client-a" }, 1);
+
+            DownRecordSnapshot snapshot;
+            session.TryEnterDown("host", 2, out snapshot);
+            Equal(RescueStartResult.Accepted,
+                session.TryStartRescue("host", "client-a", 2.0f, 3),
+                "rescue starts");
+            session.MarkDead("client-a", 4, "combat-death");
+            Equal(DownRecordState.Finalized, session.GetDown("host").State,
+                "target finalized");
+            Equal("last-rescuer-dead",
+                session.GetDown("host").TerminalReason,
+                "reason");
+        }
+
+        private static void DownedDisconnectFinalizes()
+        {
+            DownedReviveSession session = NewLiveSession();
+            DownRecordSnapshot snapshot;
+            session.TryEnterDown("host", 2, out snapshot);
+            session.MarkDisconnected("host", 3);
+            Equal(DownRecordState.Finalized, session.GetDown("host").State, "state");
+            Equal(PlayerLifeState.Disconnected,
+                session.GetLifeState("host"),
+                "disconnect state");
+            Equal("downed-player-disconnected",
+                session.GetDown("host").TerminalReason,
+                "reason");
         }
 
         private static CompatibilityTracker NewActiveTracker()

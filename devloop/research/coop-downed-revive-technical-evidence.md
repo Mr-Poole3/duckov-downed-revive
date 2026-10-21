@@ -23,15 +23,15 @@ Both Mod assemblies and the game core target the Unity Mono managed runtime.
 Observed public static API on `EscapeFromDuckovCoopMod.ModNetworkApi`:
 
 - `RegisterHandler(string channel, Action<ModMessageContext> handler)`
-- `SendToServer(string channel, Action<BinaryWriter> writePayload) -> bool`
-- `SendToClient(object peer, string channel, Action<BinaryWriter> writePayload, bool reliable) -> bool`
-- `Broadcast(string channel, Action<BinaryWriter> writePayload, bool reliable) -> int`
+- `SendToServer(string channel, Action<NetDataWriter> writePayload) -> bool`
+- `SendToClient(NetPeer peer, string channel, Action<NetDataWriter> writePayload, bool reliable) -> bool`
+- `Broadcast(string channel, Action<NetDataWriter> writePayload, bool reliable) -> int`
 - `PeerConnected` and `PeerDisconnected` events
-- `NotifyPeerConnected(object peer)` and `NotifyPeerDisconnected(object peer)`
+- `NotifyPeerConnected(NetPeer peer)` and `NotifyPeerDisconnected(NetPeer peer)`
 
 `ModMessageContext` exposes `Service`, `Sender`, `Channel`, `Payload`,
-`IsServer`, and `IsHostMessage`. The API performs queuing, replay, and duplicate
-suppression internally.
+`IsServer`, and `IsHostMessage`. `Payload` is a `ReadOnlyMemory<byte>`. The API
+performs queuing, replay, and duplicate suppression internally.
 
 Evidence:
 
@@ -62,6 +62,7 @@ Observed members on `Health`:
 - `void SetHealth(float value)`
 - `void AddHealth(float value)`
 - `bool IsDead { get; }`
+- `CharacterMainControl TryGetCharacter()`
 - `UnityEvent/event OnHurt(DamageInfo)` and `OnDead(DamageInfo)` style hooks
 
 Observed members on `DamageInfo` include the damage source character, final
@@ -101,6 +102,15 @@ Observed co-op types and seams:
 The co-op Mod already centralizes client damage requests and host health
 broadcasts. The revival Mod should observe and cooperate with this path rather
 than introduce a second health replication mechanism.
+
+Static call relationships on
+`Patch_ServerForwardRemotePlayerDamage.Prefix(DamageReceiver, ref DamageInfo)`
+show both `PlayerDamageRequestRpc` and `PlayerDamageForwardRpc` construction.
+The method consults `ModBehaviourF.IsServer`, `NetService.TryGetPlayerId`,
+`CoopTool.TryGetPeerForCharacter`, and `NetService.GetPlayerId`. This supports
+the inference that a client-originated hit is validated by the host and then
+forwarded to the target client for local application. Runtime ordering remains
+to be confirmed by the diagnostic build.
 
 Evidence:
 
@@ -155,7 +165,8 @@ Observed public `RaidUtilities` events and members:
 - `CurrentRaid`
 - `NewRaid()`, `NotifyDead()`, `NotifyEnd()`
 
-`RaidInfo` includes `valid`, `ID`, `dead`, `ended`, and timing fields.
+`RaidUtilities.RaidInfo` is a nested public struct. It includes `valid`, `ID`,
+`dead`, `ended`, and timing fields.
 
 Evidence:
 
