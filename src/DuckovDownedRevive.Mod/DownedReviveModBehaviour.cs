@@ -23,8 +23,8 @@ namespace DuckovDownedRevive.Mod
             new CompatibilityTracker();
         private readonly HostConfigSession _configSession =
             new HostConfigSession();
-        private readonly DownOpportunityLedger _ledger =
-            new DownOpportunityLedger();
+        private readonly DownedReviveSession _session =
+            new DownedReviveSession();
         private readonly PlayerRoster _roster = new PlayerRoster();
         private static DownedReviveModBehaviour _instance;
 
@@ -55,6 +55,11 @@ namespace DuckovDownedRevive.Mod
         public bool IsHost
         {
             get { return _isHost; }
+        }
+
+        public DownedReviveSession Session
+        {
+            get { return _session; }
         }
 
         private void Awake()
@@ -212,9 +217,9 @@ namespace DuckovDownedRevive.Mod
                 ? playerName
                 : (isLocal ? "local-player" : "unknown-player");
             _roster.AddOrUpdate(identity, isLocal);
-            if (_isHost && _ledger.IsActive)
+            if (_isHost)
             {
-                _ledger.RegisterPlayer(identity);
+                _session.AddPlayer(identity);
             }
         }
 
@@ -645,7 +650,7 @@ namespace DuckovDownedRevive.Mod
                 {
                     _observedRaidId = 0;
                     _configSession.EndRaid();
-                    _ledger.EndRaid();
+                    _session.EndRaid();
                 }
                 return;
             }
@@ -657,8 +662,11 @@ namespace DuckovDownedRevive.Mod
             }
 
             DownedReviveConfig locked = _configSession.LockForRaid();
-            _ledger.BeginRaid(raidId, locked.MaxDownsPerPlayer);
-            _ledger.RegisterPlayers(_roster.PlayerIds);
+            _session.StartRaid(
+                raidId,
+                locked,
+                _roster.PlayerIds,
+                Time.realtimeSinceStartup);
             _observedRaidId = raidId;
             BroadcastConfigSnapshot();
         }
