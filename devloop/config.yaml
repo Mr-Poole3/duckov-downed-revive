@@ -1,0 +1,86 @@
+# DevLoop Configuration
+
+version: 1
+initialized: true
+
+tech_stack:
+  language: C#
+  framework: Unity Mod / Harmony
+  runtime: Unity 2022.3.62f2 Mono
+  package_manager: dotnet
+
+commands:
+  test: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test.ps1
+  typecheck: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -WarningsAsErrors
+  lint: null
+  build: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1
+  e2e: manual in-game host/client verification
+
+routing:
+  L0:
+    workflow: direct
+    confirmations: []
+  L1:
+    workflow: diagnose-tdd-review
+    confirmations: [start, complete]
+  L2:
+    workflow: grill-openspec-apply-verify-archive
+    confirmations: [requirement_understanding, plan_and_spec, final_archive]
+    fast_track:
+      enabled: false
+  L3:
+    workflow: grill-with-docs-explore-spec-tickets-openspec-apply-verify-review-archive
+    confirmations: [requirement_understanding, plan_and_spec, start_coding, final_archive]
+
+escalation_factors:
+  - data_model_changes
+  - breaking_public_api_changes
+  - permission_payment_privacy_user_data
+  - data_migration
+  - cross_service_or_module
+  - backward_compatibility
+  - rollback_requirements
+  - high_technical_uncertainty
+  - multi_person_or_multi_agent
+
+hotfix:
+  enabled: true
+  triggers:
+    - user_explicit_hotfix_flag
+    - urgency_keywords_in_request
+  retroactive_spec_required: true
+  block_archive_if_spec_missing: true
+
+tracker:
+  type: github
+  repository: Mr-Poole3/duckov-downed-revive
+  publish_automatically: false
+  labels:
+    ready_for_agent: ready-for-agent
+    triage: needs-triage
+
+confirmation:
+  always_pause:
+    - requirement_understanding
+    - plan_and_spec
+    - final_archive
+  l3_start_coding: true
+
+failure:
+  max_consecutive_retries: 3
+  on_max_retries: pause_and_report
+  test_failure_flow: diagnosing-bugs
+
+brownfield:
+  mode: structured_index_on_demand
+
+host_capability:
+  subagents: true
+  background_tasks: true
+  auto_skill_trigger: true
+  workspace_fs_coordination: true
+
+  fallback:
+    serial_review: true
+    sync_pipeline: true
+    manual_trigger: true

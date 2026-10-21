@@ -1,0 +1,9 @@
+devloop/.state/
+devloop/.state.yaml
+.tools/
+.vs/
+bin/
+obj/
+artifacts/
+TestResults/
+*.user

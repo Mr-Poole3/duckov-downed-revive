@@ -1,0 +1,40 @@
+schema: spec-driven
+
+context: |
+  # Project context injected into all OpenSpec artifacts.
+
+  Tech stack: C# Unity Mod for Escape from Duckov, Unity 2022.3.62f2 Mono.
+  Runtime integration: Harmony and the public API of EscapeFromDuckovCoopMod.
+  Testing: deterministic host-session simulation first, then co-op network and
+  in-game integration checks.
+  Architecturally, keep domain policy independent from Unity adapters and use the
+  game's native death and loot path exactly once.
+
+rules:
+  proposal:
+    - "Clearly state the problem being solved and who is affected"
+    - "Define scope: what is in and what is out"
+    - "Identify risks and provide a rollback plan"
+    - "Reference relevant decisions from devloop/decisions/"
+    - "Use domain language from devloop/context/CONTEXT.md"
+
+  specs:
+    - "Use Given/When/Then format for all scenarios"
+    - "Cover success paths, error paths, and edge cases"
+    - "Each requirement must be independently verifiable"
+    - "Use ADDED/MODIFIED/REMOVED/RENAMED for delta specs"
+    - "Reference existing specs when modifying behavior"
+
+  design:
+    - "Prefer reusing existing module boundaries"
+    - "Describe data and API compatibility impact"
+    - "Identify testing seams, preferring the highest seam possible"
+    - "Document any new patterns or infrastructure"
+    - "Reference architecture-map.md for module context"
+
+  tasks:
+    - "Break into vertical slices, not horizontal layers"
+    - "Each task must be independently verifiable"
+    - "Order tasks by dependency, blockers first"
+    - "Size each task to fit in a single context window"
+    - "Use expand-contract pattern for wide refactors, not vertical slices"

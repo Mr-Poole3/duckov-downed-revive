@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DuckovGameDir Condition="'$(DuckovGameDir)' == ''">D:\Games\Escape from Duckov</DuckovGameDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DuckovDownedRevive.Core\DuckovDownedRevive.Core.csproj" />
+    <Reference Include="EscapeFromDuckovModApi">
+      <HintPath>$(DuckovGameDir)\Duckov_Data\Mods\3591341282\EscapeFromDuckovModApi.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="LiteNetLib">
+      <HintPath>$(DuckovGameDir)\Duckov_Data\Mods\3591339491\LiteNetLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TeamSoda.Duckov.Core">
+      <HintPath>$(DuckovGameDir)\Duckov_Data\Managed\TeamSoda.Duckov.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(DuckovGameDir)\Duckov_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(DuckovGameDir)\Duckov_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(DuckovGameDir)\Duckov_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(DuckovGameDir)\Duckov_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
