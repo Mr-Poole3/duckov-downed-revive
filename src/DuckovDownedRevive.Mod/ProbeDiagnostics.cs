@@ -41,6 +41,11 @@ namespace DuckovDownedRevive
             Record(line);
         }
 
+        public static void RecordSystem(string line)
+        {
+            Record(line);
+        }
+
         public static string FormatRecent()
         {
             StringBuilder builder = new StringBuilder();

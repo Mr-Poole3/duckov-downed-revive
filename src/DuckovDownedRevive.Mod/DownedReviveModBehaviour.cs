@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using DuckovDownedRevive.Core;
@@ -26,6 +27,8 @@ namespace DuckovDownedRevive
         private readonly DownedReviveSession _session =
             new DownedReviveSession();
         private readonly PlayerRoster _roster = new PlayerRoster();
+        private readonly Dictionary<string, CharacterMainControl> _characters =
+            new Dictionary<string, CharacterMainControl>(StringComparer.Ordinal);
         private static ModBehaviour _instance;
 
         private IDisposable _handlerRegistration;
@@ -44,6 +47,10 @@ namespace DuckovDownedRevive
         private uint _currentRaidId;
         private uint _observedRaidId;
         private DownedReviveConfig _replicatedConfig;
+        private string _localDownedPlayerId;
+        private CharacterMainControl _localDownedCharacter;
+        private Health _localDownedHealth;
+        private DamageInfo _localDownedDamage;
         private CompatibilityStatus _lastLoggedStatus;
         private string _diagnosticText = "Downed Revive not initialized.";
 
@@ -158,6 +165,9 @@ namespace DuckovDownedRevive
             }
 
             float now = Time.realtimeSinceStartup;
+            _session.Tick(now);
+            ProcessDownTransitions();
+
             if (now >= _nextRetryAt)
             {
                 _nextRetryAt = now + RetryIntervalSeconds;
@@ -191,6 +201,8 @@ namespace DuckovDownedRevive
             {
                 DrawConfigPanel();
             }
+
+            DrawLocalDownedHud();
         }
 
         private void OnPeerConnected(NetPeer peer)
@@ -221,6 +233,7 @@ namespace DuckovDownedRevive
                 ? playerName
                 : (isLocal ? "local-player" : "unknown-player");
             _roster.AddOrUpdate(identity, isLocal);
+            _characters[identity] = character;
             if (_isHost)
             {
                 _session.AddPlayer(identity);
@@ -312,6 +325,269 @@ namespace DuckovDownedRevive
             }
 
             RefreshDiagnostics();
+        }
+
+        public bool TryGuardHostLethalDamage(
+            Health health,
+            CharacterMainControl character,
+            DamageInfo damageInfo,
+            out float guardedHealth)
+        {
+            guardedHealth = 0.0f;
+            if (TerminalDamageBypass.Active ||
+                !HealthStateAccessor.CanSetCurrentHealth ||
+                !_isHost ||
+                !_session.IsRaidActive ||
+                _localDownedCharacter != null ||
+                health == null ||
+                character == null ||
+                character != CharacterMainControl.Main)
+            {
+                return false;
+            }
+
+            CompatibilitySnapshot compatibility =
+                _tracker.Evaluate(Time.realtimeSinceStartup);
+            if (compatibility.Status != CompatibilityStatus.Compatible)
+            {
+                return false;
+            }
+
+            string playerId = LocalPlayerId();
+            if (string.IsNullOrEmpty(playerId) ||
+                _session.CanEnterDown(playerId) != DownEntryResult.Accepted ||
+                !LethalDamageGuard.ShouldGuard(
+                    HealthStateAccessor.GetCurrentHealth(health),
+                    damageInfo.damageValue))
+            {
+                return false;
+            }
+
+            guardedHealth = LethalDamageGuard.GuardedHealth(
+                HealthStateAccessor.GetCurrentHealth(health),
+                health.MaxHealth,
+                damageInfo.damageValue);
+            HealthStateAccessor.SetCurrentHealth(health, guardedHealth);
+            ProbeDiagnostics.RecordSystem(
+                "[DuckovDownedRevive][Guard] ARMED" +
+                " frame=" + Time.frameCount +
+                " player=" + playerId +
+                " current=" +
+                HealthStateAccessor.GetCurrentHealth(health).ToString("0.00") +
+                " damage=" + damageInfo.damageValue.ToString("0.00") +
+                " guard=" + guardedHealth.ToString("0.00"));
+            return true;
+        }
+
+        public bool TryEnterHostDown(
+            Health health,
+            CharacterMainControl character,
+            DamageInfo damageInfo)
+        {
+            string playerId = LocalPlayerId();
+            if (string.IsNullOrEmpty(playerId))
+            {
+                return false;
+            }
+
+            DownRecordSnapshot snapshot;
+            DownEntryResult result = _session.TryEnterDown(
+                playerId,
+                Time.realtimeSinceStartup,
+                out snapshot);
+            if (result != DownEntryResult.Accepted)
+            {
+                ProbeDiagnostics.RecordSystem(
+                    "[DuckovDownedRevive][Down] REJECTED reason=" + result);
+                return false;
+            }
+
+            _localDownedPlayerId = playerId;
+            _localDownedCharacter = character;
+            _localDownedHealth = health;
+            _localDownedDamage = damageInfo;
+
+            HealthStateAccessor.SetCurrentHealth(health, 1.0f);
+            health.SetInvincible(true);
+            character.SetMoveInput(Vector3.zero);
+            character.SetRunInput(false);
+            character.SetAdsInput(false);
+            character.RefreshInteractTarget();
+
+            CharacterAnimationControl animation =
+                character.GetComponent<CharacterAnimationControl>();
+            if (animation != null)
+            {
+                animation.enabled = false;
+            }
+
+            CharacterActionBase currentAction = character.CurrentAction;
+            if (currentAction != null)
+            {
+                currentAction.StopAction();
+            }
+
+            InputManager.DisableInput(gameObject);
+
+            GameCamera camera = GameCamera.Instance;
+            if (camera != null)
+            {
+                camera.FreezeCamera(600.0f);
+            }
+
+            ProbeDiagnostics.RecordSystem(
+                "[DuckovDownedRevive][Down] ENTER" +
+                " frame=" + Time.frameCount +
+                " player=" + playerId +
+                " downId=" + snapshot.DownId +
+                " remaining=" +
+                snapshot.RemainingSeconds.ToString("0.00"));
+            return true;
+        }
+
+        private void ProcessDownTransitions()
+        {
+            DownTransition[] transitions = _session.DrainTransitions();
+            for (int index = 0; index < transitions.Length; index++)
+            {
+                DownTransition transition = transitions[index];
+                if (!string.Equals(
+                    transition.PlayerId,
+                    _localDownedPlayerId,
+                    StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (transition.Kind == DownTransitionKind.Finalized)
+                {
+                    FinishLocalDownedDeath(transition.Reason);
+                }
+            }
+        }
+
+        private void FinishLocalDownedDeath(string reason)
+        {
+            CharacterMainControl character = _localDownedCharacter;
+            Health health = _localDownedHealth;
+            DamageInfo lethalDamage = _localDownedDamage;
+            string playerId = _localDownedPlayerId;
+            if (character == null || health == null)
+            {
+                ClearLocalDownedState();
+                return;
+            }
+
+            RestoreDownedControl(character, health);
+            HealthStateAccessor.SetCurrentHealth(health, 1.0f);
+            lethalDamage.damageValue = 99999.0f;
+            lethalDamage.finalDamage = 99999.0f;
+            lethalDamage.ignoreArmor = true;
+            lethalDamage.ignoreDifficulty = true;
+
+            ProbeDiagnostics.RecordSystem(
+                "[DuckovDownedRevive][Down] FINALIZE" +
+                " frame=" + Time.frameCount +
+                " player=" + playerId +
+                " reason=" + reason);
+
+            ClearLocalDownedState();
+            TerminalDamageBypass.Active = true;
+            try
+            {
+                health.Hurt(lethalDamage);
+            }
+            finally
+            {
+                TerminalDamageBypass.Active = false;
+            }
+        }
+
+        private void RestoreDownedControl(
+            CharacterMainControl character,
+            Health health)
+        {
+            if (health != null)
+            {
+                health.SetInvincible(false);
+            }
+
+            if (character != null)
+            {
+                CharacterAnimationControl animation =
+                    character.GetComponent<CharacterAnimationControl>();
+                if (animation != null)
+                {
+                    animation.enabled = true;
+                }
+
+                character.SetMoveInput(Vector3.zero);
+                character.SetRunInput(false);
+                character.SetAdsInput(false);
+            }
+
+            InputManager.ActiveInput(gameObject);
+
+            GameCamera camera = GameCamera.Instance;
+            if (camera != null)
+            {
+                camera.FreezeCamera(0.0f);
+            }
+        }
+
+        private void ClearLocalDownedState()
+        {
+            _localDownedPlayerId = null;
+            _localDownedCharacter = null;
+            _localDownedHealth = null;
+            _localDownedDamage = default(DamageInfo);
+        }
+
+        private void DrawLocalDownedHud()
+        {
+            if (string.IsNullOrEmpty(_localDownedPlayerId))
+            {
+                return;
+            }
+
+            DownRecordSnapshot snapshot =
+                _session.GetDown(_localDownedPlayerId);
+            if (snapshot == null ||
+                (snapshot.State != DownRecordState.Countdown &&
+                 snapshot.State != DownRecordState.RescueActive))
+            {
+                return;
+            }
+
+            float width = 360.0f;
+            float ratio = snapshot.RemainingSeconds /
+                Mathf.Max(0.01f, _session.Config.DownDurationSeconds);
+            ratio = Mathf.Clamp01(ratio);
+            Rect background = new Rect(
+                Screen.width * 0.5f - width * 0.5f,
+                Screen.height - 112.0f,
+                width,
+                54.0f);
+            GUI.Box(background, string.Empty);
+            GUI.color = Color.white;
+            GUI.DrawTexture(
+                new Rect(
+                    background.x + 8.0f,
+                    background.y + 28.0f,
+                    (background.width - 16.0f) * ratio,
+                    14.0f),
+                Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            GUI.Label(
+                new Rect(background.x, background.y + 4.0f, background.width, 24.0f),
+                "DOWNED  " + Mathf.CeilToInt(snapshot.RemainingSeconds) + "s");
+        }
+
+        private string LocalPlayerId()
+        {
+            return string.IsNullOrEmpty(_roster.LocalPlayerId)
+                ? null
+                : _roster.LocalPlayerId;
         }
 
         private bool TrySendCapabilityToServer()

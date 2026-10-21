@@ -130,24 +130,15 @@ namespace DuckovDownedRevive.Core
             Tick(now);
             snapshot = null;
 
-            if (!IsRaidActive)
-            {
-                return DownEntryResult.RaidInactive;
-            }
-
             string normalized = Normalize(playerId);
-            PlayerRuntime player;
-            if (!_players.TryGetValue(normalized, out player) ||
-                player.LifeState != PlayerLifeState.Alive ||
-                _downs.ContainsKey(normalized))
+            DownEntryResult eligibility = CanEnterDown(normalized);
+            if (eligibility != DownEntryResult.Accepted)
             {
-                return DownEntryResult.PlayerUnavailable;
+                return eligibility;
             }
 
-            if (!HasLivingTeammate(normalized))
-            {
-                return DownEntryResult.NoTeammate;
-            }
+            PlayerRuntime player;
+            _players.TryGetValue(normalized, out player);
 
             int remaining;
             if (!_ledger.TryConsume(normalized, out remaining))
@@ -177,6 +168,32 @@ namespace DuckovDownedRevive.Core
             FinalizeUnrescuableDowns(now, "last-rescuer-downed");
             snapshot = Snapshot(record);
             return DownEntryResult.Accepted;
+        }
+
+        public DownEntryResult CanEnterDown(string playerId)
+        {
+            if (!IsRaidActive)
+            {
+                return DownEntryResult.RaidInactive;
+            }
+
+            string normalized = Normalize(playerId);
+            PlayerRuntime player;
+            if (!_players.TryGetValue(normalized, out player) ||
+                player.LifeState != PlayerLifeState.Alive ||
+                _downs.ContainsKey(normalized))
+            {
+                return DownEntryResult.PlayerUnavailable;
+            }
+
+            if (!HasLivingTeammate(normalized))
+            {
+                return DownEntryResult.NoTeammate;
+            }
+
+            return _ledger.Remaining(normalized) > 0
+                ? DownEntryResult.Accepted
+                : DownEntryResult.NoOpportunity;
         }
 
         public DownRecordSnapshot GetDown(string playerId)

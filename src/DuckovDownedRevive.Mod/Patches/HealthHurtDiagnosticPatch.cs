@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using DuckovDownedRevive.Core;
 using HarmonyLib;
 using UnityEngine;
 
@@ -6,6 +8,17 @@ namespace DuckovDownedRevive.Patches
     [HarmonyPatch(typeof(Health), "Hurt")]
     internal static class HealthHurtDiagnosticPatch
     {
+        private sealed class PendingGuard
+        {
+            public float OriginalHealth;
+            public float GuardedHealth;
+            public DamageInfo DamageInfo;
+            public CharacterMainControl Character;
+        }
+
+        private static readonly Dictionary<Health, PendingGuard> Pending =
+            new Dictionary<Health, PendingGuard>();
+
         private static void Prefix(Health __instance, DamageInfo damageInfo)
         {
             CharacterMainControl character = PlayerCharacter(__instance);
@@ -22,7 +35,8 @@ namespace DuckovDownedRevive.Patches
                 " damageType=" + damageInfo.damageType +
                 " current=" + (__instance == null
                     ? "n/a"
-                    : __instance.CurrentHealth.ToString("0.00")) +
+                    : HealthStateAccessor.GetCurrentHealth(__instance)
+                        .ToString("0.00")) +
                 " damageValue=" + damageInfo.damageValue.ToString("0.00") +
                 " finalDamage=" + damageInfo.finalDamage.ToString("0.00") +
                 " explosion=" + damageInfo.isExplosion +
@@ -33,6 +47,34 @@ namespace DuckovDownedRevive.Patches
             {
                 return;
             }
+
+            ModBehaviour behaviour = ModBehaviour.Instance;
+            if (behaviour == null ||
+                Pending.ContainsKey(__instance) ||
+                TerminalDamageBypass.Active)
+            {
+                return;
+            }
+
+            float originalHealth =
+                HealthStateAccessor.GetCurrentHealth(__instance);
+            float guardedHealth;
+            if (!behaviour.TryGuardHostLethalDamage(
+                __instance,
+                character,
+                damageInfo,
+                out guardedHealth))
+            {
+                return;
+            }
+
+            Pending[__instance] = new PendingGuard
+            {
+                OriginalHealth = originalHealth,
+                GuardedHealth = guardedHealth,
+                DamageInfo = damageInfo,
+                Character = character
+            };
         }
 
         private static void Postfix(
@@ -55,6 +97,56 @@ namespace DuckovDownedRevive.Patches
                     : __instance.CurrentHealth.ToString("0.00")) +
                 " dead=" + (__instance != null && __instance.IsDead) +
                 " source=" + SourceName(damageInfo));
+
+            PendingGuard pending;
+            if (__instance == null ||
+                !Pending.TryGetValue(__instance, out pending))
+            {
+                return;
+            }
+
+            Pending.Remove(__instance);
+            float healthAfter =
+                HealthStateAccessor.GetCurrentHealth(__instance);
+            float actualDamage = LethalDamageGuard.ActualDamageApplied(
+                pending.GuardedHealth,
+                healthAfter);
+            bool lethal = LethalDamageGuard.IsLethal(
+                pending.OriginalHealth,
+                actualDamage);
+            ModBehaviour behaviour = ModBehaviour.Instance;
+
+            if (lethal &&
+                behaviour != null &&
+                behaviour.TryEnterHostDown(
+                    __instance,
+                    pending.Character,
+                    pending.DamageInfo))
+            {
+                ProbeDiagnostics.RecordSystem(
+                    "[DuckovDownedRevive][Guard] DOWN_ACCEPTED" +
+                    " frame=" + Time.frameCount +
+                    " original=" +
+                    pending.OriginalHealth.ToString("0.00") +
+                    " actualDamage=" + actualDamage.ToString("0.00") +
+                    " guarded=" + pending.GuardedHealth.ToString("0.00") +
+                    " after=" + healthAfter.ToString("0.00"));
+                return;
+            }
+
+            float restoredHealth = LethalDamageGuard.RemainingHealth(
+                pending.OriginalHealth,
+                actualDamage);
+            HealthStateAccessor.SetCurrentHealth(
+                __instance,
+                restoredHealth);
+            ProbeDiagnostics.RecordSystem(
+                "[DuckovDownedRevive][Guard] RESTORED" +
+                " frame=" + Time.frameCount +
+                " lethal=" + lethal +
+                " original=" + pending.OriginalHealth.ToString("0.00") +
+                " actualDamage=" + actualDamage.ToString("0.00") +
+                " restored=" + restoredHealth.ToString("0.00"));
         }
 
         internal static CharacterMainControl PlayerCharacter(Health health)

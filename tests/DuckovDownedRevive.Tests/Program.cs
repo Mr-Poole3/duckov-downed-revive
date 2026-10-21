@@ -34,6 +34,9 @@ namespace DuckovDownedRevive.Tests
             Run("rescue ownership is exclusive", RescueOwnershipIsExclusive);
             Run("last rescuer downed finalizes target", LastRescuerDownedFinalizesTarget);
             Run("downed disconnect finalizes", DownedDisconnectFinalizes);
+            Run("observed non-lethal hit stays alive", ObservedNonLethalHitStaysAlive);
+            Run("observed lethal hit is confirmed", ObservedLethalHitIsConfirmed);
+            Run("already dead health is ignored", AlreadyDeadHealthIsIgnored);
 
             Console.WriteLine("Assertions: " + _assertions);
             if (Failures.Count == 0)
@@ -369,6 +372,50 @@ namespace DuckovDownedRevive.Tests
                 "reason");
         }
 
+        private static void ObservedNonLethalHitStaysAlive()
+        {
+            float original = 10.11f;
+            float incoming = 11.79f;
+            True(LethalDamageGuard.ShouldGuard(original, incoming),
+                "candidate should be guarded");
+            float guarded = LethalDamageGuard.GuardedHealth(
+                original,
+                45.0f,
+                incoming);
+            float actualDamage = LethalDamageGuard.ActualDamageApplied(
+                guarded,
+                guarded - 9.43f);
+            True(!LethalDamageGuard.IsLethal(original, actualDamage),
+                "observed damage was not lethal");
+            Near(0.68f,
+                LethalDamageGuard.RemainingHealth(original, actualDamage),
+                0.001f,
+                "remaining health");
+        }
+
+        private static void ObservedLethalHitIsConfirmed()
+        {
+            float original = 0.68f;
+            float incoming = 11.79f;
+            True(LethalDamageGuard.ShouldGuard(original, incoming),
+                "candidate should be guarded");
+            float guarded = LethalDamageGuard.GuardedHealth(
+                original,
+                45.0f,
+                incoming);
+            float actualDamage = LethalDamageGuard.ActualDamageApplied(
+                guarded,
+                guarded - 9.43f);
+            True(LethalDamageGuard.IsLethal(original, actualDamage),
+                "observed damage was lethal");
+        }
+
+        private static void AlreadyDeadHealthIsIgnored()
+        {
+            True(!LethalDamageGuard.ShouldGuard(0.0f, 11.79f),
+                "dead health cannot enter down twice");
+        }
+
         private static CompatibilityTracker NewActiveTracker()
         {
             CompatibilityTracker tracker = new CompatibilityTracker();
@@ -416,6 +463,20 @@ namespace DuckovDownedRevive.Tests
             {
                 throw new InvalidOperationException(
                     label + " did not contain <" + expected + ">");
+            }
+        }
+
+        private static void Near(
+            float expected,
+            float actual,
+            float tolerance,
+            string label)
+        {
+            _assertions++;
+            if (Math.Abs(expected - actual) > tolerance)
+            {
+                throw new InvalidOperationException(
+                    label + " expected <" + expected + "> but was <" + actual + ">");
             }
         }
     }
